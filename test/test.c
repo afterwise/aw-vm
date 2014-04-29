@@ -5,49 +5,55 @@
 #include <stdio.h>
 
 int main(int argc, char *argv[]) {
-	size_t size, rss;
+	size_t total, resident;
 	void *p;
 	void *q;
+	void *r;
 
 	(void) argc;
 	(void) argv;
 
 	vm_init();
 
-	vm_usage(&size, &rss);
-	printf(" init: size=%lu rss=%lu\n", (unsigned long) size, (unsigned long) rss);
-
 	assert(vm_base == vm_end);
-	printf("  vm_maxsize=%lu\n", (unsigned long) vm_maxsize);
-	printf("  vm_pagesize=%lu\n", (unsigned long) vm_pagesize);
-	printf("  vm_largepagesize=%lu\n", (unsigned long) vm_largepagesize);
-	printf("  vm_base=%p vm_end=%p\n", (void *) vm_base, (void *) vm_end);
+	printf("              page = %08lx\n", (unsigned long) vm_page);
+	printf("          big page = %08lx\n", (unsigned long) vm_bigpage);
 
-	p = vm_increase(1, 0);
-	printf("p=%p\n", p);
+	vm_usage(&total, &resident);
+	printf("* %16p : total=%08lx resident=%08lx\n", NULL, (unsigned long) total, (unsigned long) resident);
 
-	vm_usage(&size, &rss);
-	printf(" inc1: size=%lu rss=%lu\n", (unsigned long) size, (unsigned long) rss);
-	printf("  vm_base=%p vm_end=%p\n", (void *) vm_base, (void *) vm_end);
+	p = vm_increase(4, 0);
+	*(int *) p = 0;
+	vm_usage(&total, &resident);
 
-	q = vm_increase(2, VM_LARGEPAGES);
-	printf("q=%p\n", q);
+	printf("+ %16p : total=%08lx resident=%08lx\n", p, (unsigned long) total, (unsigned long) resident);
 
-	vm_usage(&size, &rss);
-	printf(" inc2: size=%lu rss=%lu\n", (unsigned long) size, (unsigned long) rss);
-	printf("  vm_base=%p vm_end=%p\n", (void *) vm_base, (void *) vm_end);
+	q = vm_increase(4, VM_BIGPAGES);
+	*(int *) q = 0;
+	vm_usage(&total, &resident);
 
-	vm_decrease(q, 2, VM_LARGEPAGES);
+	printf("+ %16p : total=%08lx resident=%08lx\n", q, (unsigned long) total, (unsigned long) resident);
 
-	vm_usage(&size, &rss);
-	printf(" dec2: size=%lu rss=%lu\n", (unsigned long) size, (unsigned long) rss);
-	printf("  vm_base=%p vm_end=%p\n", (void *) vm_base, (void *) vm_end);
+	r = vm_increase(4, 0);
+	*(int *) r = 0;
+	vm_usage(&total, &resident);
 
-	vm_decrease(q, 1, 0);
+	printf("+ %16p : total=%08lx resident=%08lx\n", r, (unsigned long) total, (unsigned long) resident);
 
-	vm_usage(&size, &rss);
-	printf(" dec1: size=%lu rss=%lu\n", (unsigned long) size, (unsigned long) rss);
-	printf("  vm_base=%p vm_end=%p\n", (void *) vm_base, (void *) vm_end);
+	vm_decrease(r, 4, 0);
+	vm_usage(&total, &resident);
+
+	printf("- %16p : total=%08lx resident=%08lx\n", r, (unsigned long) total, (unsigned long) resident);
+
+	vm_decrease(q, 4, VM_BIGPAGES);
+	vm_usage(&total, &resident);
+
+	printf("- %16p : total=%08lx resident=%08lx\n", q, (unsigned long) total, (unsigned long) resident);
+
+	vm_decrease(p, 4, 0);
+	vm_usage(&total, &resident);
+
+	printf("- %16p : total=%08lx resident=%08lx\n", p, (unsigned long) total, (unsigned long) resident);
 
 	assert(vm_base == vm_end);
 

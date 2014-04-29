@@ -34,9 +34,8 @@
 extern "C" {
 #endif
 
-extern unsigned long long vm_maxsize;
-extern size_t vm_pagesize;
-extern size_t vm_largepagesize;
+extern size_t vm_page;
+extern size_t vm_bigpage;
 
 extern uintptr_t vm_base;
 extern uintptr_t vm_end;
@@ -54,7 +53,7 @@ void vm_usage(size_t *total, size_t *resident);
  */
 
 enum {
-	VM_LARGEPAGES = 0x1
+	VM_BIGPAGES = 0x1
 };
 
 void *vm_increase(size_t n, int flags);

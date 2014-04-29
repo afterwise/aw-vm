@@ -47,9 +47,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-unsigned long long vm_maxsize;
-size_t vm_pagesize;
-size_t vm_largepagesize;
+size_t vm_page;
+size_t vm_bigpage;
 
 uintptr_t vm_base;
 uintptr_t vm_end;
@@ -69,7 +68,7 @@ void vm_init() {
 	HANDLE tok; */
 
 	GetSystemInfo(&si);
-	vm_pagesize = si.dwPageSize;
+	vm_page = si.dwPageSize;
 
 	/* if (OpenProcessToken((HANDLE) -1, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tok))
 		if (LookupPrivilegeValue(NULL, "SeLockMemoryPrivilege", &tp.Privileges[0].Luid)) {
@@ -78,24 +77,24 @@ void vm_init() {
 
 			if (AdjustTokenPrivileges(tok, FALSE, &tp, 0, NULL, 0) &&
 					GetLastError() == ERROR_SUCCESS)
-				vm_largepagesize = GetLargePageMinimum();
+				vm_bigpage = GetLargePageMinimum();
 
 			CloseHandle(tok);
 		} */
 #elif __linux__ || __APPLE__
-	vm_pagesize = sysconf(_SC_PAGESIZE);
-	vm_largepagesize = 2 * 1024 * 1024;
+	vm_page = sysconf(_SC_PAGESIZE);
+	vm_bigpage = 2 * 1024 * 1024;
 #elif __CELLOS_LV2__
-# ifndef NDEBUG
-	vm_maxsize = 512 * 1024 * 1024;
-# else
-	vm_maxsize = 256 * 1024 * 1024;
-# endif
-	vm_pagesize = 64 * 1024;
-	vm_largepagesize = 1 * 1024 * 1024;
+	vm_page = 64 * 1024;
+	vm_bigpage = 1 * 1024 * 1024;
 
 	if ((err = sys_mmapper_allocate_address(
-			vm_maxsize, SYS_MEMORY_PAGE_SIZE_64K | SYS_MEMORY_ACCESS_RIGHT_ANY,
+# ifndef NDEBUG
+			512 * 1024 * 1024,
+# else
+			256 * 1024 * 1024,
+# endif
+			SYS_MEMORY_PAGE_SIZE_64K | SYS_MEMORY_ACCESS_RIGHT_ANY,
 			256 * 1024 * 1024, &vm_base)) != 0)
 		fprintf(stderr, "sys_mmapper_allocate_address: %d\n", err), abort();
 
@@ -136,7 +135,7 @@ void vm_usage(size_t *total, size_t *resident) {
 	}
 
 	*total = sz;
-	*resident = rp * vm_pagesize;
+	*resident = rp * vm_page;
 #elif __APPLE__
 	struct task_basic_info info;
 	mach_msg_type_number_t n = TASK_BASIC_INFO_COUNT;
@@ -158,64 +157,61 @@ void vm_usage(size_t *total, size_t *resident) {
 
 void *vm_increase(size_t n, int flags) {
 	void *p = NULL;
-	size_t z = vm_pagesize;
+	size_t z = vm_page;
 	int err;
 
 	(void) err;
 
-	if ((flags & VM_LARGEPAGES) && vm_largepagesize)
-		z = vm_largepagesize;
+	if ((flags & VM_BIGPAGES) && vm_bigpage)
+		z = vm_bigpage;
 
 	n = (n + (z - 1)) & ~(z - 1);
 
-	if (!vm_maxsize || vm_end + n <= vm_base + vm_maxsize) {
 #if _WIN32
-		if ((p = VirtualAlloc(
-				NULL, n, MEM_RESERVE | MEM_COMMIT |
-					/* XXX: uncomment once MEM_LARGE_PAGES is confirmed in mingw */
-					(/*(flags & VM_LARGEPAGES) && vm_largepagesize ? MEM_LARGE_PAGES :*/ 0),
-				PAGE_READWRITE)) == NULL)
-			fprintf(stderr, "VirtualAlloc: %ld\n", GetLastError()), abort();
+	if ((p = VirtualAlloc(
+			NULL, n, MEM_RESERVE | MEM_COMMIT |
+				/* XXX: uncomment once MEM_LARGE_PAGES is confirmed in mingw */
+				(/*(flags & VM_BIGPAGES) && vm_bigpage ? MEM_LARGE_PAGES :*/ 0),
+			PAGE_READWRITE)) == NULL)
+		fprintf(stderr, "VirtualAlloc: %ld\n", GetLastError()), abort();
 #elif __linux__
-		if ((p = mmap(
-				NULL, n, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE |
-					(flags & VM_LARGEPAGES ? MAP_HUGETLB : 0), -1, 0)) == MAP_FAILED)
-			fprintf(stderr, "mmap: %d\n", errno), abort();
+	if ((p = mmap(
+			NULL, n, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE |
+				(flags & VM_BIGPAGES ? MAP_HUGETLB : 0), -1, 0)) == MAP_FAILED)
+		fprintf(stderr, "mmap: %d\n", errno), abort();
 #elif __APPLE__
-		if ((p = mmap(
-				NULL, n, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE,
-				/* XXX: uncomment once superpages work */
-				(/*flags & VM_LARGEPAGES ? VM_FLAGS_SUPERPAGE_SIZE_2MB :*/ -1), 0)) == MAP_FAILED)
-			fprintf(stderr, "mmap: %d\n", errno), abort();
+	if ((p = mmap(
+			NULL, n, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE,
+			/* XXX: uncomment once superpages work */
+			(/*flags & VM_BIGPAGES ? VM_FLAGS_SUPERPAGE_SIZE_2MB :*/ -1), 0)) == MAP_FAILED)
+		fprintf(stderr, "mmap: %d\n", errno), abort();
 #elif __CELLOS_LV2__
-		unsigned id;
+	unsigned id;
 
-		if ((err = sys_mmapper_allocate_memory(
-				n, (!(flags & VM_LARGEPAGES) ?
-					SYS_MEMORY_GRANULARITY_64K : SYS_MEMORY_GRANULARITY_1M),
-				&id)) != 0)
-			fprintf(stderr, "sys_mmapper_allocate_memory: %d\n", err), abort();
+	if ((err = sys_mmapper_allocate_memory(
+			n, (!(flags & VM_BIGPAGES) ?
+				SYS_MEMORY_GRANULARITY_64K : SYS_MEMORY_GRANULARITY_1M),
+			&id)) != 0)
+		fprintf(stderr, "sys_mmapper_allocate_memory: %d\n", err), abort();
 
-		if ((err = sys_mmapper_map_memory(vm_end, id, SYS_MEMORY_PROT_READ_WRITE)) != 0)
-			fprintf(stderr, "sys_mmapper_map_memory: %d\n", err), abort();
+	if ((err = sys_mmapper_map_memory(vm_end, id, SYS_MEMORY_PROT_READ_WRITE)) != 0)
+		fprintf(stderr, "sys_mmapper_map_memory: %d\n", err), abort();
 
-		p = (void *) vm_end;
+	p = (void *) vm_end;
 #endif
 
-		vm_end += n;
-	}
-
+	vm_end += n;
 	return p;
 }
 
 void vm_decrease(void *p, size_t n, int flags) {
-	size_t z = vm_pagesize;
+	size_t z = vm_page;
 	int err;
 
 	(void) err;
 
-	if ((flags & VM_LARGEPAGES) && vm_largepagesize)
-		z = vm_largepagesize;
+	if ((flags & VM_BIGPAGES) && vm_bigpage)
+		z = vm_bigpage;
 
 	n = (n + (z - 1)) & ~(z - 1);
 
