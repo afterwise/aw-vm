@@ -40,8 +40,10 @@ extern size_t vm_bigpage;
 extern uintptr_t vm_base;
 extern uintptr_t vm_end;
 
-extern uintptr_t vm_auxbase;
-extern size_t vm_auxsize;
+#if __CELLOS_LV2__
+extern uintptr_t vm_rsxbase;
+extern size_t vm_rsxsize;
+#endif
 
 void vm_init();
 void vm_usage(size_t *total, size_t *resident);

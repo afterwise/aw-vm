@@ -53,8 +53,10 @@ size_t vm_bigpage;
 uintptr_t vm_base;
 uintptr_t vm_end;
 
-uintptr_t vm_auxbase;
-size_t vm_auxsize;
+#if __CELLOS_LV2__
+uintptr_t vm_rsxbase;
+size_t vm_rsxsize;
+#endif
 
 void vm_init() {
 	int err;
@@ -105,7 +107,7 @@ void vm_init() {
 		fprintf(stderr, "cellGcmInitSystemMode: %d\n", err), abort();
 # endif
 
-	if ((err = cellGcmMapLocalMemory((void **) &vm_auxbase, &vm_auxsize)) != 0)
+	if ((err = cellGcmMapLocalMemory((void **) &vm_rsxbase, &vm_rsxsize)) != 0)
 		fprintf(stderr, "cellGcmMapLocalMemory: %d\n", err), abort();
 #endif
 }
