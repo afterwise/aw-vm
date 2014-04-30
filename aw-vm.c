@@ -121,7 +121,7 @@ void vm_usage(size_t *total, size_t *resident) {
 	/* PROCESS_MEMORY_COUNTERS pmc;
 	GetProcessMemoryInfo((HANDLE) -1, &pmc, sizeof pmc);
 
-	*total = pmc.WorkingSetSize;
+	*total = pmc.PagefileUsage;
 	*resident = pmc.WorkingSetSize; */
 #elif __linux__
 	unsigned long long sz = 0, rp = 0;
