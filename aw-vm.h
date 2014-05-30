@@ -60,8 +60,8 @@ enum {
 	VM_BIGPAGES = 0x1
 };
 
-void *vm_increase(size_t n, int flags);
-void vm_decrease(void *p, size_t n, int flags);
+void *vm_grow(size_t n, int flags);
+void vm_shrink(void *p, size_t n, int flags);
 
 #ifdef __cplusplus
 } /* extern "C" */

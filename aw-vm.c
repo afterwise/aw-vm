@@ -158,7 +158,7 @@ void vm_usage(size_t *total, size_t *resident) {
 #endif
 }
 
-void *vm_increase(size_t n, int flags) {
+void *vm_grow(size_t n, int flags) {
 	void *p = NULL;
 	size_t z = vm_page;
 	int err;
@@ -207,7 +207,7 @@ void *vm_increase(size_t n, int flags) {
 	return p;
 }
 
-void vm_decrease(void *p, size_t n, int flags) {
+void vm_shrink(void *p, size_t n, int flags) {
 	size_t z = vm_page;
 	int err;
 
