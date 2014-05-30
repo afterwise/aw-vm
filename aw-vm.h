@@ -41,7 +41,9 @@ extern uintptr_t vm_base;
 extern uintptr_t vm_end;
 
 #if __CELLOS_LV2__
+# define vm_rsxend (vm_rsxbase + vm_rsxoff)
 extern uintptr_t vm_rsxbase;
+extern size_t vm_rsxoff;
 extern size_t vm_rsxsize;
 #endif
 

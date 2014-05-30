@@ -55,6 +55,7 @@ uintptr_t vm_end;
 
 #if __CELLOS_LV2__
 uintptr_t vm_rsxbase;
+size_t vm_rsxoff;
 size_t vm_rsxsize;
 #endif
 
