@@ -47,7 +47,7 @@ extern size_t vm_rsxoff;
 extern size_t vm_rsxsize;
 #endif
 
-void vm_init();
+void vm_init(void);
 void vm_usage(size_t *total, size_t *resident);
 
 /*

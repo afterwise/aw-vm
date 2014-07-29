@@ -59,7 +59,7 @@ size_t vm_rsxoff;
 size_t vm_rsxsize;
 #endif
 
-void vm_init() {
+void vm_init(void) {
 	int err;
 	(void) err;
 
