@@ -1,6 +1,6 @@
 
 /*
-   Copyright (c) 2014 Malte Hildingsson, malte (at) afterwi.se
+   Copyright (c) 2014-2016 Malte Hildingsson, malte (at) afterwi.se
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -37,31 +37,18 @@ extern "C" {
 extern size_t vm_page;
 extern size_t vm_bigpage;
 
-extern uintptr_t vm_base;
-extern uintptr_t vm_end;
-
-#if __CELLOS_LV2__
-# define vm_rsxend (vm_rsxbase + vm_rsxoff)
-extern uintptr_t vm_rsxbase;
-extern size_t vm_rsxoff;
-extern size_t vm_rsxsize;
-#endif
-
 void vm_init(void);
 void vm_usage(size_t *total, size_t *resident);
-
-/*
-   The intention here is to grow the virtual memory space linearly.
-   Use these functions to create scopes. They are inherently not
-   considered to be thread safe.
- */
 
 enum {
 	VM_BIGPAGES = 0x1
 };
 
-void *vm_grow(size_t n, int flags);
-void vm_shrink(void *p, size_t n, int flags);
+void *vm_reserve(size_t n);
+void vm_release(void *p, size_t n);
+
+void *vm_commit(void *p, size_t n, int flags);
+void vm_decommit(void *p, size_t n);
 
 #ifdef __cplusplus
 } /* extern "C" */
