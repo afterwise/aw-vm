@@ -55,9 +55,10 @@ void vm_decommit(void *p, size_t n);
    Include aw-lma.h for this to compile.
  */
 
-#define vlma_init(lma,n) do { \
+#define vlma_create(lma,n) do { \
 		_lma_assert(((n) & (vm_page - 1)) == 0); \
 		lma_init(lma, vm_reserve(n), n); \
+		(lma)->high = (lma)->low; \
 	} while (0)
 #define vlma_destroy(lma) do { \
 		vm_release((lma)->base, (lma)->end - (lma)->base); \
