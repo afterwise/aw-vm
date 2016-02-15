@@ -183,7 +183,11 @@ void vm_decommit(void *p, size_t n) {
 #if _WIN32
 	VirtualFree(p, n, MEM_DECOMMIT);
 #elif __linux__ || __APPLE__
+# if defined MADV_FREE
 	madvise(p, n, MADV_FREE);
+# elif defined MADV_DONTNEED
+	madvise(p, n, MADV_DONTNEED);
+# endif
 #elif __CELLOS_LV2__
 	unsigned id;
 	sys_mmapper_unmap_memory((uintptr_t) p, &id);
