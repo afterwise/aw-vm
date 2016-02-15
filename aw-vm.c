@@ -45,6 +45,10 @@
 # include <unistd.h>
 #endif
 
+#if __linux__
+# include <stdio.h>
+#endif
+
 #if __APPLE__
 # include <mach/mach_init.h>
 # include <mach/task.h>
