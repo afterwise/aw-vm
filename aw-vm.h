@@ -41,19 +41,29 @@ void vm_init(void);
 void vm_usage(size_t *total, size_t *resident);
 
 enum {
-	VM_BIGPAGES = 0x1
+	/*
+	   Allocate big pages to reduce TLB pressure.
+	 */
+	VM_BIGPAGES = 0x1,
+	/*
+	   Reserve memory but do not commit, can be used to decommit when passed to
+	   vm_dealloc().
+	 */
+	VM_RESERVE = 0x2,
+	/*
+	   Allocate a mirrored memory buffer, mapping double the address space wrapped
+	   around a single buffer. Must also be passed to vm_dealloc().
+	 */
+	VM_MIRROR = 0x4
 };
 
-void *vm_reserve(size_t n);
-void vm_release(void *p, size_t n);
+/*
+  Ancillary mapping id, only used for mirrored buffers.
+*/
+typedef struct vm_mapping_id *vm_mapping_id_t;
 
-void *vm_commit(void *p, size_t n, int flags);
-void vm_decommit(void *p, size_t n);
-
-struct vm_mirror;
-
-void *vm_alloc_mirror(struct vm_mirror **m, size_t n, int flags);
-void vm_dealloc_mirror(struct vm_mirror *m, void *p, size_t n);
+void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id);
+void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id);
 
 /*
    Example snippet of how to use vm and lma to create a growable, contiguous area.
@@ -62,17 +72,17 @@ void vm_dealloc_mirror(struct vm_mirror *m, void *p, size_t n);
 
 #define vlma_create(lma,n) do { \
 		_lma_assert(((n) & (vm_page - 1)) == 0); \
-		lma_init(lma, vm_reserve(n), n); \
+		lma_init(lma, vm_alloc(NULL, n, VM_RESERVE, NULL), n); \
 		(lma)->high = (lma)->low; \
 	} while (0)
 #define vlma_destroy(lma) do { \
-		vm_release((lma)->base, (lma)->end - (lma)->base); \
+		vm_dealloc((lma)->base, (lma)->end - (lma)->base, 0, NULL); \
 	} while (0)
 #define vlma_alloc(lma,p,n) do { \
 		while ((*(p) = lma_alloc_low(lma, n)) == NULL) { \
 			if ((lma)->high >= (lma)->end) \
 				abort(); \
-			vm_commit((lma)->high, ((n) + (vm_page - 1)) & ~(vm_page - 1), 0); \
+			vm_alloc((lma)->high, ((n) + (vm_page - 1)) & ~(vm_page - 1), 0, NULL); \
 			(lma)->high += ((n) + (vm_page - 1)) & ~(vm_page - 1); \
 		} \
 	} while (0)
@@ -81,7 +91,7 @@ void vm_dealloc_mirror(struct vm_mirror *m, void *p, size_t n);
 		_lma_assert((lma_addr_t) (p) < (lma)->low); \
 		lma_addr_t _vlma_free_p = \
 			(lma_addr_t) (((uintptr_t) (lma)->low + (vm_page - 1)) & ~(vm_page - 1)); \
-		vm_decommit(_vlma_free_p, (lma)->high - _vlma_free_p); \
+		vm_dealloc(_vlma_free_p, (lma)->high - _vlma_free_p, VM_RESERVE, NULL); \
 		(lma)->high = _vlma_free_p; \
 	} while (0)
 

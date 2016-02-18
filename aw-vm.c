@@ -134,161 +134,156 @@ void vm_usage(size_t *total, size_t *resident) {
 #endif
 }
 
-void *vm_reserve(size_t n) {
-	void *p;
-#if _WIN32
-	if ((p = VirtualAlloc(NULL, n, MEM_RESERVE, PAGE_NOACCESS)) != NULL)
-		return p;
-#elif __linux__ || __APPLE__
-	if ((p = mmap(NULL, n, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0)) != MAP_FAILED)
-		return p;
-#elif __CELLOS_LV2__
-	if (sys_mmapper_allocate_address(
-			n, SYS_MEMORY_PAGE_SIZE_64K | SYS_MEMORY_ACCESS_RIGHT_ANY,
-			vm_page, (uintptr_t *) &p) == 0)
-		return p;
-#endif
-	return NULL;
-}
-
-void vm_release(void *p, size_t n) {
-#if _WIN32
-	if (!VirtualFree(p, 0, MEM_RELEASE))
-		abort();
-#elif __linux__ || __APPLE__
-	if (munmap(p, n) < 0)
-		abort();
-#elif __CELLOS_LV2__
-	sys_mmapper_free_address(p);
-#endif
-}
-
-void *vm_commit(void *p, size_t n, int flags) {
+void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 	int big = (flags & VM_BIGPAGES) != 0 && vm_bigpage != 0;
 #if _WIN32
-	if ((p = VirtualAlloc(p, n, MEM_COMMIT | (big ? MEM_LARGE_PAGES : 0), PAGE_READWRITE)) != NULL)
-		return p;
-#elif __linux__
-	if ((p = mmap(
-			p, n, PROT_READ | PROT_WRITE,
-			MAP_PRIVATE | MAP_ANON | MAP_FIXED | (big ? MAP_HUGETLB : 0),
-			-1, 0)) != MAP_FAILED)
-		return p;
-#elif __APPLE__
-	if ((p = mmap(
-			p, n, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON | MAP_FIXED,
-			(big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : -1), 0)) != MAP_FAILED)
-		return p;
-#elif __CELLOS_LV2__
-	unsigned id;
-	if (sys_mmapper_allocate_memory(
-			n, (!big ? SYS_MEMORY_GRANULARITY_64K : SYS_MEMORY_GRANULARITY_1M),
-			&id) == 0)
-		if (sys_mmapper_map_memory((uintptr_t) p, id, SYS_MEMORY_PROT_READ_WRITE) == 0)
+	if ((flags & VM_MIRROR) != 0) {
+		HANDLE h;
+		while ((h = CreateFileMapping(
+				INVALID_HANDLE_VALUE, NULL,
+				PAGE_READWRITE | (big ? SEC_COMMIT | SEC_LARGE_PAGES : 0),
+				0, n * 2, NULL)) != NULL) {
+			void *q;
+			if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n * 2)) == NULL ||
+					!UnmapViewOfFile(p))
+				abort();
+			if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n, p)) == NULL) {
+				if (GetLastError() != ERROR_INVALID_ADDRESS ||
+						!CloseHandle(h))
+					abort();
+			} else if ((q = MapViewOfFile(
+					h, FILE_MAP_ALL_ACCESS, 0, 0, n,
+					(unsigned char *) p + n)) == NULL) {
+				if (GetLastError() != ERROR_INVALID_ADDRESS ||
+						!UnmapViewOfFile(p) ||
+						!CloseHandle(h))
+					abort();
+			} else {
+				if ((unsigned char *) p + n != q)
+					abort();
+				return *(HANDLE *) id = h, p;
+			}
+		}
+	} else if ((flags & VM_RESERVE) != 0) {
+		if ((p = VirtualAlloc(NULL, n, MEM_RESERVE, PAGE_NOACCESS)) != NULL)
 			return p;
-#endif
-	return NULL;
-}
-
-void vm_decommit(void *p, size_t n) {
-#if _WIN32
-	if (!VirtualFree(p, n, MEM_DECOMMIT))
-		abort();
+	} else {
+		if ((p = VirtualAlloc(
+				p, n, MEM_COMMIT | (big ? MEM_LARGE_PAGES : 0),
+				PAGE_READWRITE)) != NULL)
+			return p;
+	}
 #elif __linux__ || __APPLE__
-# if defined MADV_FREE
-	if (madvise(p, n, MADV_FREE) < 0)
-		abort();
-# elif defined MADV_DONTNEED
-	if (madvise(p, n, MADV_DONTNEED) < 0)
-		abort();
+	if ((flags & VM_MIRROR) != 0) {
+# if __linux___
+		_assert((n & (vm_page - 1)) == 0);
+		if ((p = mmap(
+				NULL, n * 2, PROT_READ | PROT_WRITE,
+				MAP_SHARED | MAP_ANON | (big ? MAP_HUGETLB : 0),
+				-1, 0)) != MAP_FAILED) {
+			if (remap_file_pages(
+					(unsigned char *) p + n, n, 0, 0, 0) == 0)
+				return *id = NULL, p;
+			if (munmap(p, n * 2) < 0)
+				abort();
+		}
+# elif __APPLE__
+		mach_port_t t = mach_task_self();
+		while (vm_allocate(
+				t, (vm_address_t *) &p, n * 2,
+				VM_FLAGS_ANYWHERE | (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0)) == 0) {
+			void *q = (unsigned char *) p + n;
+			if (vm_deallocate(t, (vm_address_t) q, n) < 0)
+				abort();
+			vm_prot_t cur, max;
+			if (vm_remap(
+					t, (vm_address_t *) &q, n, 0, (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0),
+					t, (vm_address_t) p, 0, &cur, &max, VM_INHERIT_COPY) == 0)
+				return *id = NULL, p;
+			if (vm_deallocate(t, (vm_address_t) p, n) < 0)
+				abort();
+		}
 # endif
+	} else if ((flags & VM_RESERVE) != 0) {
+		if ((p = mmap(NULL, n, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0)) != MAP_FAILED)
+			return p;
+	} else {
+# if __linux__
+		if ((p = mmap(
+				p, n, PROT_READ | PROT_WRITE,
+				MAP_PRIVATE | MAP_ANON | MAP_FIXED | (big ? MAP_HUGETLB : 0),
+				-1, 0)) != MAP_FAILED)
+			return p;
+# elif __APPLE__
+		if ((p = mmap(
+				p, n, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON | MAP_FIXED,
+				(big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : -1), 0)) != MAP_FAILED)
+			return p;
+# endif
+	}
 #elif __CELLOS_LV2__
-	unsigned id;
-	sys_mmapper_unmap_memory((uintptr_t) p, &id);
-	sys_mmapper_free_memory(id);
-#endif
-}
-
-void *vm_alloc_mirror(struct vm_mirror **m, size_t n, int flags) {
-	int big = (flags & VM_BIGPAGES) != 0 && vm_bigpage != 0;
-#if _WIN32
-	HANDLE h;
-	while ((h = CreateFileMapping(
-			INVALID_HANDLE_VALUE, NULL,
-			PAGE_READWRITE | (big ? SEC_COMMIT | SEC_LARGE_PAGES : 0),
-			0, n * 2, NULL)) != NULL) {
-		void *p, *q;
-		if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n * 2)) == NULL)
-			abort();
-		if (!UnmapViewOfFile(p))
-			abort();
-		if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n, p)) == NULL) {
-			if (GetLastError() != ERROR_INVALID_ADDRESS)
-				abort();
-			CloseHandle(h);
-		} else if ((q = MapViewOfFile(
-				h, FILE_MAP_ALL_ACCESS, 0, 0, n, (unsigned char *) p + n)) == NULL) {
-			if (GetLastError() != ERROR_INVALID_ADDRESS)
-				abort();
-			if (!UnmapViewOfFile(p))
-				abort();
-			if (!CloseHandle(h))
-				abort();
-		} else {
-			if ((unsigned char *) p + n != q)
-				abort();
-			return *(HANDLE *) m = h, p;
+	if ((flags & (VM_RESERVE | VM_MIRROR)) == 0) {
+		if (sys_mmapper_allocate_address(
+				n, (!big ? SYS_MEMORY_GRANULARITY_64K :
+					SYS_MEMORY_GRANULARITY_1M) | SYS_MEMORY_ACCESS_RIGHT_ANY,
+				vm_page, (uintptr_t *) &p) == 0) {
+			unsigned i;
+			if (sys_mmapper_allocate_memory(
+					n, (!big ? SYS_MEMORY_GRANULARITY_64K : SYS_MEMORY_GRANULARITY_1M),
+					&i) == 0)
+				if (sys_mmapper_map_memory(
+						(uintptr_t) p, i, SYS_MEMORY_PROT_READ_WRITE) == 0)
+					return p;
 		}
 	}
-#elif __linux__
-	void *p;
-	_assert((n & (vm_page - 1)) == 0);
-	if ((p = mmap(
-			NULL, n * 2, PROT_READ | PROT_WRITE,
-			MAP_SHARED | MAP_ANON | (big ? MAP_HUGETLB : 0),
-			-1, 0)) != MAP_FAILED) {
-		if (remap_file_pages(
-				(unsigned char *) p + n, n, 0, 0, 0) == 0)
-			return *m = NULL, p;
-		if (munmap(p, n * 2) < 0)
-			abort();
-	}
-#elif __APPLE__
-	mach_port_t t = mach_task_self();
-	void *p;
-	while (vm_allocate(
-			t, (vm_address_t *) &p, n * 2,
-			VM_FLAGS_ANYWHERE | (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0)) == 0) {
-		void *q = (unsigned char *) p + n;
-		if (vm_deallocate(t, (vm_address_t) q, n) < 0)
-			abort();
-		vm_prot_t cur, max;
-		if (vm_remap(
-				t, (vm_address_t *) &q, n, 0, (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0),
-				t, (vm_address_t) p, 0, &cur, &max, VM_INHERIT_COPY) == 0)
-			return *m = NULL, p;
-		if (vm_deallocate(t, (vm_address_t) p, n) < 0)
-			abort();
-	}
 #endif
 	return NULL;
 }
 
-void vm_dealloc_mirror(struct vm_mirror *m, void *p, size_t n) {
-	(void) m;
+void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 #if _WIN32
-	if (!UnmapViewOfFile(p))
-		abort();
-	if (!UnmapViewOfFile((unsigned char *) p + n))
-		abort();
-	if (!CloseHandle((HANDLE) m))
-		abort():
-#elif __linux__
-	if (munmap(p, n * 2) < 0)
-		abort();
-#elif __APPLE__
-	if (vm_deallocate(mach_task_self(), (vm_address_t) p, n * 2) < 0)
-		abort();
+	if ((flags & VM_MIRROR) != 0) {
+		if (!UnmapViewOfFile(p) ||
+				!UnmapViewOfFile((unsigned char *) p + n) ||
+				!CloseHandle((HANDLE) id))
+			abort():
+	} else if ((flags & VM_RESERVE) != 0) {
+		if (!VirtualFree(p, n, MEM_DECOMMIT))
+			abort();
+	} else {
+		if (!VirtualFree(p, 0, MEM_RELEASE))
+			abort();
+	}
+#elif __linux__ || __APPLE__
+	(void) id;
+	if ((flags & VM_MIRROR) != 0) {
+# if __linux__
+		if (munmap(p, n * 2) < 0)
+			abort();
+# elif __APPLE__
+		if (vm_deallocate(mach_task_self(), (vm_address_t) p, n * 2) < 0)
+			abort();
+# endif
+	} else if ((flags & VM_RESERVE) != 0) {
+# if defined MADV_FREE
+		if (madvise(p, n, MADV_FREE) < 0)
+			abort();
+# elif defined MADV_DONTNEED
+		if (madvise(p, n, MADV_DONTNEED) < 0)
+			abort();
+# endif
+	} else {
+		if (munmap(p, n) < 0)
+			abort();
+	}
+#elif __CELLOS_LV2__
+	(void) id;
+	if ((flags & (VM_RESERVE | VM_MIRROR)) != 0) {
+		unsigned i;
+		sys_mmapper_unmap_memory((uintptr_t) p, &i);
+		sys_mmapper_free_memory(i);
+		sys_mmapper_free_address((uintptr_t) p);
+	}
 #endif
 }
 
