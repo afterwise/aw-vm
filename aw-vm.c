@@ -37,6 +37,11 @@
 
 #include "aw-vm.h"
 
+#ifndef _assert
+# include <assert.h>
+# define _assert(x) assert(x)
+#endif
+
 #if _WIN32
 # include <psapi.h>
 #endif
@@ -237,13 +242,13 @@ void *vm_alloc_mirror(struct vm_mirror **m, size_t n, int flags) {
 	}
 #elif __linux__
 	void *p;
+	_assert((n & (vm_page - 1)) == 0);
 	if ((p = mmap(
 			NULL, n * 2, PROT_READ | PROT_WRITE,
-			MAP_PRIVATE | MAP_ANON | MAP_FIXED | (big ? MAP_HUGETLB : 0),
+			MAP_SHARED | MAP_ANON | (big ? MAP_HUGETLB : 0),
 			-1, 0)) != MAP_FAILED) {
 		if (remap_file_pages(
-				(unsigned char *) p + n, n, PROT_READ | PROT_WRITE,
-				n / (big ? vm_bigpage : vm_page), 0) == 0)
+				(unsigned char *) p + n, n, 0, 0, 0) == 0)
 			return *m = NULL, p;
 		if (munmap(p, n * 2) < 0)
 			abort();

@@ -62,6 +62,7 @@ int main(int argc, char *argv[]) {
 	vm_dealloc_mirror(m, a, 64 * 1024);
 	printf("dealloc mirror; total=%zx resident=%zx\n", t, r);
 
+	printf("OK\n");
 	return 0;
 }
 
