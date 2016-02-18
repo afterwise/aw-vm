@@ -175,7 +175,7 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 	}
 #elif __linux__ || __APPLE__
 	if ((flags & VM_MIRROR) != 0) {
-# if __linux___
+# if __linux__
 		_assert((n & (vm_page - 1)) == 0);
 		if ((p = mmap(
 				NULL, n * 2, PROT_READ | PROT_WRITE,
