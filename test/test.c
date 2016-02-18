@@ -46,6 +46,22 @@ int main(int argc, char *argv[]) {
 	vm_usage(&t, &r);
 	printf("after release; total=%zx resident=%zx a=%p\n", t, r, a);
 
+	struct vm_mirror *m;
+	a = vm_alloc_mirror(&m, 64 * 1024, 0);
+	printf("alloc mirror; total=%zx resident=%zx a=%p\n", t, r, a);
+	assert(a != NULL);
+
+	for (int i = 0; i < 256; ++i)
+		((unsigned char *) a)[i] = i;
+
+	p = (unsigned char *) a + 64 * 1024;
+	printf("check mirror; total=%zx resident=%zx p=%p\n", t, r, p);
+	for (int i = 0; i < 256; ++i)
+		assert(((unsigned char *) p)[i] == i);
+
+	vm_dealloc_mirror(m, a, 64 * 1024);
+	printf("dealloc mirror; total=%zx resident=%zx\n", t, r);
+
 	return 0;
 }
 

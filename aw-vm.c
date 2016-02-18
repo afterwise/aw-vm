@@ -27,6 +27,7 @@
 # elif __linux__
 #  define _BSD_SOURCE 1
 #  define _DEFAULT_SOURCE 1
+#  define _GNU_SOURCE 1
 #  define _POSIX_C_SOURCE 200809L
 #  define _SVID_SOURCE 1
 # elif __APPLE__
@@ -52,6 +53,7 @@
 #if __APPLE__
 # include <mach/mach_init.h>
 # include <mach/task.h>
+# include <mach/vm_map.h>
 # include <mach/vm_statistics.h>
 #endif
 
@@ -79,7 +81,8 @@ void vm_init(void) {
 			if (AdjustTokenPrivileges(tok, FALSE, &tp, 0, NULL, 0) &&
 					GetLastError() == ERROR_SUCCESS)
 				vm_bigpage = GetLargePageMinimum();
-			CloseHandle(tok);
+			if (!CloseHandle(tok))
+				abort();
 		}
 #elif __linux__ || __APPLE__
 	vm_page = sysconf(_SC_PAGESIZE);
@@ -93,7 +96,8 @@ void vm_init(void) {
 void vm_usage(size_t *total, size_t *resident) {
 #if _WIN32
 	PROCESS_MEMORY_COUNTERS pmc;
-	GetProcessMemoryInfo(INVALID_HANDLE_VALUE, &pmc, sizeof pmc);
+	if (!GetProcessMemoryInfo(INVALID_HANDLE_VALUE, &pmc, sizeof pmc))
+		abort();
 	*total = pmc.PagefileUsage;
 	*resident = pmc.WorkingSetSize;
 #elif __linux__
@@ -144,9 +148,11 @@ void *vm_reserve(size_t n) {
 
 void vm_release(void *p, size_t n) {
 #if _WIN32
-	VirtualFree(p, 0, MEM_RELEASE);
+	if (!VirtualFree(p, 0, MEM_RELEASE))
+		abort();
 #elif __linux__ || __APPLE__
-	munmap(p, n);
+	if (munmap(p, n) < 0)
+		abort();
 #elif __CELLOS_LV2__
 	sys_mmapper_free_address(p);
 #endif
@@ -181,17 +187,103 @@ void *vm_commit(void *p, size_t n, int flags) {
 
 void vm_decommit(void *p, size_t n) {
 #if _WIN32
-	VirtualFree(p, n, MEM_DECOMMIT);
+	if (!VirtualFree(p, n, MEM_DECOMMIT))
+		abort();
 #elif __linux__ || __APPLE__
 # if defined MADV_FREE
-	madvise(p, n, MADV_FREE);
+	if (madvise(p, n, MADV_FREE) < 0)
+		abort();
 # elif defined MADV_DONTNEED
-	madvise(p, n, MADV_DONTNEED);
+	if (madvise(p, n, MADV_DONTNEED) < 0)
+		abort();
 # endif
 #elif __CELLOS_LV2__
 	unsigned id;
 	sys_mmapper_unmap_memory((uintptr_t) p, &id);
 	sys_mmapper_free_memory(id);
+#endif
+}
+
+void *vm_alloc_mirror(struct vm_mirror **m, size_t n, int flags) {
+	int big = (flags & VM_BIGPAGES) != 0 && vm_bigpage != 0;
+#if _WIN32
+	HANDLE h;
+	while ((h = CreateFileMapping(
+			INVALID_HANDLE_VALUE, NULL,
+			PAGE_READWRITE | (big ? SEC_COMMIT | SEC_LARGE_PAGES : 0),
+			0, n * 2, NULL)) != NULL) {
+		void *p, *q;
+		if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n * 2)) == NULL)
+			abort();
+		if (!UnmapViewOfFile(p))
+			abort();
+		if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n, p)) == NULL) {
+			if (GetLastError() != ERROR_INVALID_ADDRESS)
+				abort();
+			CloseHandle(h);
+		} else if ((q = MapViewOfFile(
+				h, FILE_MAP_ALL_ACCESS, 0, 0, n, (unsigned char *) p + n)) == NULL) {
+			if (GetLastError() != ERROR_INVALID_ADDRESS)
+				abort();
+			if (!UnmapViewOfFile(p))
+				abort();
+			if (!CloseHandle(h))
+				abort();
+		} else {
+			if ((unsigned char *) p + n != q)
+				abort();
+			return *(HANDLE *) m = h, p;
+		}
+	}
+#elif __linux__
+	void *p;
+	if ((p = mmap(
+			NULL, n * 2, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANON | MAP_FIXED | (big ? MAP_HUGETLB : 0),
+			-1, 0)) != MAP_FAILED) {
+		if (remap_file_pages(
+				(unsigned char *) p + n, n, PROT_READ | PROT_WRITE,
+				n / (big ? vm_bigpage : vm_page), 0) == 0)
+			return *m = NULL, p;
+		if (munmap(p, n * 2) < 0)
+			abort();
+	}
+#elif __APPLE__
+	mach_port_t t = mach_task_self();
+	void *p;
+	while (vm_allocate(
+			t, (vm_address_t *) &p, n * 2,
+			VM_FLAGS_ANYWHERE | (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0)) == 0) {
+		void *q = (unsigned char *) p + n;
+		if (vm_deallocate(t, (vm_address_t) q, n) < 0)
+			abort();
+		vm_prot_t cur, max;
+		if (vm_remap(
+				t, (vm_address_t *) &q, n, 0, (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0),
+				t, (vm_address_t) p, 0, &cur, &max, VM_INHERIT_COPY) == 0)
+			return *m = NULL, p;
+		if (vm_deallocate(t, (vm_address_t) p, n) < 0)
+			abort();
+	}
+#endif
+	return NULL;
+}
+
+void vm_dealloc_mirror(struct vm_mirror *m, void *p, size_t n) {
+	(void) m;
+#if _WIN32
+	if (!UnmapViewOfFile(p))
+		abort();
+	if (!UnmapViewOfFile((unsigned char *) p + n))
+		abort();
+	if (!CloseHandle((HANDLE) m))
+		abort():
+#elif __linux__
+	if (munmap(p, n * 2) < 0)
+		abort();
+#elif __APPLE__
+	if (vm_deallocate(mach_task_self(), (vm_address_t) p, n * 2) < 0)
+		abort();
 #endif
 }
 

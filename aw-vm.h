@@ -50,6 +50,11 @@ void vm_release(void *p, size_t n);
 void *vm_commit(void *p, size_t n, int flags);
 void vm_decommit(void *p, size_t n);
 
+struct vm_mirror;
+
+void *vm_alloc_mirror(struct vm_mirror **m, size_t n, int flags);
+void vm_dealloc_mirror(struct vm_mirror *m, void *p, size_t n);
+
 /*
    Example snippet of how to use vm and lma to create a growable, contiguous area.
    Include aw-lma.h for this to compile.
