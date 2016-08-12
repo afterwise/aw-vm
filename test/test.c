@@ -48,6 +48,7 @@ int main(int argc, char *argv[]) {
 
 	vm_mapping_id_t id;
 	a = vm_alloc(NULL, 64 * 1024, VM_MIRROR, &id);
+	vm_usage(&t, &r);
 	printf("alloc mirror; total=%zx resident=%zx a=%p\n", t, r, a);
 	assert(a != NULL);
 
@@ -60,7 +61,16 @@ int main(int argc, char *argv[]) {
 		assert(((unsigned char *) p)[i] == i);
 
 	vm_dealloc(a, 64 * 1024, VM_MIRROR, id);
+	vm_usage(&t, &r);
 	printf("dealloc mirror; total=%zx resident=%zx\n", t, r);
+
+	a = vm_alloc(NULL, 64 * 1024, 0, &id);
+	vm_usage(&t, &r);
+	printf("alloc w/o reserve; total=%zx resident=%zx a=%p\n", t, r, a);
+
+	vm_dealloc(a, 64 * 1024, 0, id);
+	vm_usage(&t, &r);
+	printf("dealloc w/o reserve; total=%zx resident=%zx\n", t, r);
 
 	printf("OK\n");
 	return 0;

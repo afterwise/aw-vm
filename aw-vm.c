@@ -169,7 +169,7 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 			return p;
 	} else {
 		if ((p = VirtualAlloc(
-				p, n, MEM_COMMIT | (big ? MEM_LARGE_PAGES : 0),
+				p, n, MEM_COMMIT | (p == NULL ? MEM_RESERVE : 0) | (big ? MEM_LARGE_PAGES : 0),
 				PAGE_READWRITE)) != NULL)
 			return p;
 	}
@@ -211,12 +211,12 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 # if __linux__
 		if ((p = mmap(
 				p, n, PROT_READ | PROT_WRITE,
-				MAP_PRIVATE | MAP_ANON | MAP_FIXED | (big ? MAP_HUGETLB : 0),
+				MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0) | (big ? MAP_HUGETLB : 0),
 				-1, 0)) != MAP_FAILED)
 			return p;
 # elif __APPLE__
 		if ((p = mmap(
-				p, n, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON | MAP_FIXED,
+				p, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0),
 				(big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : -1), 0)) != MAP_FAILED)
 			return p;
 # endif
@@ -278,7 +278,7 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 	}
 #elif __CELLOS_LV2__
 	(void) id;
-	if ((flags & (VM_RESERVE | VM_MIRROR)) != 0) {
+	if ((flags & (VM_RESERVE | VM_MIRROR)) == 0) {
 		unsigned i;
 		sys_mmapper_unmap_memory((uintptr_t) p, &i);
 		sys_mmapper_free_memory(i);
