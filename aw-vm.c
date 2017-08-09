@@ -43,6 +43,7 @@
 #endif
 
 #if _WIN32
+# include <windows.h>
 # include <psapi.h>
 #endif
 
@@ -147,11 +148,11 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 			if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n * 2)) == NULL ||
 					!UnmapViewOfFile(p))
 				abort();
-			if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n, p)) == NULL) {
+			if ((p = MapViewOfFileEx(h, FILE_MAP_ALL_ACCESS, 0, 0, n, p)) == NULL) {
 				if (GetLastError() != ERROR_INVALID_ADDRESS ||
 						!CloseHandle(h))
 					abort();
-			} else if ((q = MapViewOfFile(
+			} else if ((q = MapViewOfFileEx(
 					h, FILE_MAP_ALL_ACCESS, 0, 0, n,
 					(unsigned char *) p + n)) == NULL) {
 				if (GetLastError() != ERROR_INVALID_ADDRESS ||
@@ -246,7 +247,7 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 		if (!UnmapViewOfFile(p) ||
 				!UnmapViewOfFile((unsigned char *) p + n) ||
 				!CloseHandle((HANDLE) id))
-			abort():
+			abort();
 	} else if ((flags & VM_RESERVE) != 0) {
 		if (!VirtualFree(p, n, MEM_DECOMMIT))
 			abort();
