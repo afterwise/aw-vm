@@ -22,15 +22,15 @@
  */
 
 #ifndef _nofeatures
-# if _WIN32
+# if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN 1
-# elif __linux__
+# elif defined(__linux__)
 #  define _BSD_SOURCE 1
 #  define _DEFAULT_SOURCE 1
 #  define _GNU_SOURCE 1
 #  define _POSIX_C_SOURCE 200809L
 #  define _SVID_SOURCE 1
-# elif __APPLE__
+# elif defined(__APPLE__)
 #  define _DARWIN_C_SOURCE 1
 # endif
 #endif /* _nofeatures */
@@ -42,28 +42,28 @@
 # define _assert(x) assert(x)
 #endif
 
-#if _WIN32
+#if defined(_WIN32)
 # include <windows.h>
 # include <psapi.h>
 #endif
 
-#if __linux__ || __APPLE__
+#if defined(__linux__) || defined(__APPLE__)
 # include <sys/mman.h>
 # include <unistd.h>
 #endif
 
-#if __linux__
+#if defined(__linux__)
 # include <stdio.h>
 #endif
 
-#if __APPLE__
+#if defined(__APPLE__)
 # include <mach/mach_init.h>
 # include <mach/task.h>
 # include <mach/vm_map.h>
 # include <mach/vm_statistics.h>
 #endif
 
-#if __CELLOS_LV2__
+#if defined(__CELLOS_LV2__)
 # include <cell/gcm.h>
 # include <sys/memory.h>
 #endif
@@ -74,7 +74,7 @@ size_t vm_page;
 size_t vm_bigpage;
 
 void vm_init(void) {
-#if _WIN32
+#if defined(_WIN32)
 	SYSTEM_INFO si;
 	TOKEN_PRIVILEGES tp;
 	HANDLE tok;
@@ -90,23 +90,23 @@ void vm_init(void) {
 			if (!CloseHandle(tok))
 				abort();
 		}
-#elif __linux__ || __APPLE__
+#elif defined(__linux__) || defined(__APPLE__)
 	vm_page = sysconf(_SC_PAGESIZE);
 	vm_bigpage = 2 * 1024 * 1024;
-#elif __CELLOS_LV2__
+#elif defined(__CELLOS_LV2__)
 	vm_page = 64 * 1024;
 	vm_bigpage = 1 * 1024 * 1024;
 #endif
 }
 
 void vm_usage(size_t *total, size_t *resident) {
-#if _WIN32
+#if defined(_WIN32)
 	PROCESS_MEMORY_COUNTERS pmc;
 	if (!GetProcessMemoryInfo(INVALID_HANDLE_VALUE, &pmc, sizeof pmc))
 		abort();
 	*total = pmc.PagefileUsage;
 	*resident = pmc.WorkingSetSize;
-#elif __linux__
+#elif defined(__linux__)
 	unsigned long long sz = 0, rp = 0;
 	FILE *fd;
 	if ((fd = fopen("/proc/self/stat", "rb")) != NULL) {
@@ -119,7 +119,7 @@ void vm_usage(size_t *total, size_t *resident) {
 	}
 	*total = sz;
 	*resident = rp * vm_page;
-#elif __APPLE__
+#elif defined(__APPLE__)
 	struct task_basic_info info;
 	mach_msg_type_number_t n = TASK_BASIC_INFO_COUNT;
 	task_t t;
@@ -127,7 +127,7 @@ void vm_usage(size_t *total, size_t *resident) {
 		task_info(t, TASK_BASIC_INFO, (task_info_t) &info, &n);
 	*total = info.virtual_size;
 	*resident = info.resident_size;
-#elif __CELLOS_LV2__
+#elif defined(__CELLOS_LV2__)
 	sys_memory_info_t info;
 	sys_memory_get_user_memory_size(&info);
 	*total = info.total_user_memory;
@@ -137,7 +137,7 @@ void vm_usage(size_t *total, size_t *resident) {
 
 void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 	int big = (flags & VM_BIGPAGES) != 0 && vm_bigpage != 0;
-#if _WIN32
+#if defined(_WIN32)
 	if ((flags & VM_MIRROR) != 0) {
 		HANDLE h;
 		while ((h = CreateFileMapping(
@@ -174,9 +174,9 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 				PAGE_READWRITE)) != NULL)
 			return p;
 	}
-#elif __linux__ || __APPLE__
+#elif defined(__linux__) || defined(__APPLE__)
 	if ((flags & VM_MIRROR) != 0) {
-# if __linux__
+# if defined(__linux__)
 		_assert((n & (vm_page - 1)) == 0);
 		if ((p = mmap(
 				NULL, n * 2, PROT_READ | PROT_WRITE,
@@ -188,7 +188,7 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 			if (munmap(p, n * 2) < 0)
 				abort();
 		}
-# elif __APPLE__
+# elif defined(__APPLE__)
 		mach_port_t t = mach_task_self();
 		while (vm_allocate(
 				t, (vm_address_t *) &p, n * 2,
@@ -209,20 +209,20 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 		if ((p = mmap(NULL, n, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0)) != MAP_FAILED)
 			return p;
 	} else {
-# if __linux__
+# if defined(__linux__)
 		if ((p = mmap(
 				p, n, PROT_READ | PROT_WRITE,
 				MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0) | (big ? MAP_HUGETLB : 0),
 				-1, 0)) != MAP_FAILED)
 			return p;
-# elif __APPLE__
+# elif defined(__APPLE__)
 		if ((p = mmap(
 				p, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0),
 				(big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : -1), 0)) != MAP_FAILED)
 			return p;
 # endif
 	}
-#elif __CELLOS_LV2__
+#elif defined(__CELLOS_LV2__)
 	if ((flags & (VM_RESERVE | VM_MIRROR)) == 0) {
 		if (sys_mmapper_allocate_address(
 				n, (!big ? SYS_MEMORY_GRANULARITY_64K :
@@ -242,7 +242,7 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 }
 
 void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
-#if _WIN32
+#if defined(_WIN32)
 	if ((flags & VM_MIRROR) != 0) {
 		if (!UnmapViewOfFile(p) ||
 				!UnmapViewOfFile((unsigned char *) p + n) ||
@@ -255,21 +255,21 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 		if (!VirtualFree(p, 0, MEM_RELEASE))
 			abort();
 	}
-#elif __linux__ || __APPLE__
+#elif defined(__linux__) || defined(__APPLE__)
 	(void) id;
 	if ((flags & VM_MIRROR) != 0) {
-# if __linux__
+# if defined(__linux__)
 		if (munmap(p, n * 2) < 0)
 			abort();
-# elif __APPLE__
+# elif defined(__APPLE__)
 		if (vm_deallocate(mach_task_self(), (vm_address_t) p, n * 2) < 0)
 			abort();
 # endif
 	} else if ((flags & VM_RESERVE) != 0) {
-# if defined MADV_FREE
+# if defined(MADV_FREE)
 		if (madvise(p, n, MADV_FREE) < 0)
 			abort();
-# elif defined MADV_DONTNEED
+# elif defined(MADV_DONTNEED)
 		if (madvise(p, n, MADV_DONTNEED) < 0)
 			abort();
 # endif
@@ -277,7 +277,7 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 		if (munmap(p, n) < 0)
 			abort();
 	}
-#elif __CELLOS_LV2__
+#elif defined(__CELLOS_LV2__)
 	(void) id;
 	if ((flags & (VM_RESERVE | VM_MIRROR)) == 0) {
 		unsigned i;
