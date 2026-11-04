@@ -26,7 +26,7 @@
 
 #include <stddef.h>
 
-#if !_MSC_VER
+#if !defined(_MSC_VER) || _MSC_VER >= 1600
 # include <stdint.h>
 #endif
 

@@ -23,7 +23,9 @@
 
 #ifndef _nofeatures
 # if defined(_WIN32)
-#  define WIN32_LEAN_AND_MEAN 1
+#  ifndef WIN32_LEAN_AND_MEAN
+#   define WIN32_LEAN_AND_MEAN 1
+#  endif
 # elif defined(__linux__)
 #  define _BSD_SOURCE 1
 #  define _DEFAULT_SOURCE 1
