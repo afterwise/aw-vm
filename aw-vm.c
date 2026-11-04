@@ -147,7 +147,7 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 		while ((h = CreateFileMapping(
 				INVALID_HANDLE_VALUE, NULL,
 				PAGE_READWRITE | (big ? SEC_COMMIT | SEC_LARGE_PAGES : 0),
-				0, n * 2, NULL)) != NULL) {
+				(DWORD) ((unsigned long long) n * 2 >> 32), (DWORD) (n * 2), NULL)) != NULL) {
 			void *q;
 			if ((p = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, n * 2)) == NULL ||
 					!UnmapViewOfFile(p))
