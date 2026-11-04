@@ -81,7 +81,7 @@ void vm_init(void) {
 	GetSystemInfo(&si);
 	vm_page = si.dwPageSize;
 	if (OpenProcessToken(INVALID_HANDLE_VALUE, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tok)) {
-		if (LookupPrivilegeValue(NULL, "SeLockMemoryPrivilege", &tp.Privileges[0].Luid)) {
+		if (LookupPrivilegeValue(NULL, SE_LOCK_MEMORY_NAME, &tp.Privileges[0].Luid)) {
 			tp.PrivilegeCount = 1;
 			tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 			if (AdjustTokenPrivileges(tok, FALSE, &tp, 0, NULL, 0) &&
