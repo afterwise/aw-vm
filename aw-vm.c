@@ -132,11 +132,11 @@ void vm_usage(size_t *total, size_t *resident) {
 #elif defined(__APPLE__)
 	struct task_basic_info info;
 	mach_msg_type_number_t n = TASK_BASIC_INFO_COUNT;
-	task_t t;
-	if (task_for_pid(current_task(), getpid(), &t) == KERN_SUCCESS)
-		task_info(t, TASK_BASIC_INFO, (task_info_t) &info, &n);
-	*total = info.virtual_size;
-	*resident = info.resident_size;
+	if (task_info(mach_task_self(), TASK_BASIC_INFO, (task_info_t) &info, &n) == KERN_SUCCESS) {
+		*total = info.virtual_size;
+		*resident = info.resident_size;
+	} else
+		*total = *resident = 0;
 #elif defined(__CELLOS_LV2__)
 	sys_memory_info_t info;
 	sys_memory_get_user_memory_size(&info);
@@ -206,18 +206,20 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 		}
 # elif defined(__APPLE__)
 		mach_port_t t = mach_task_self();
-		while (vm_allocate(
+		int tries;
+		/* another thread may take the upper half before it is remapped, so try a few times */
+		for (tries = 0; tries < 8 && vm_allocate(
 				t, (vm_address_t *) &p, n * 2,
-				VM_FLAGS_ANYWHERE | (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0)) == 0) {
+				VM_FLAGS_ANYWHERE | (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0)) == KERN_SUCCESS; ++tries) {
 			void *q = (unsigned char *) p + n;
-			if (vm_deallocate(t, (vm_address_t) q, n) < 0)
+			if (vm_deallocate(t, (vm_address_t) q, n) != KERN_SUCCESS)
 				abort();
 			vm_prot_t cur, max;
 			if (vm_remap(
-					t, (vm_address_t *) &q, n, 0, (big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : 0),
-					t, (vm_address_t) p, 0, &cur, &max, VM_INHERIT_COPY) == 0)
+					t, (vm_address_t *) &q, n, 0, VM_FLAGS_FIXED,
+					t, (vm_address_t) p, 0, &cur, &max, VM_INHERIT_COPY) == KERN_SUCCESS)
 				return *id = NULL, p;
-			if (vm_deallocate(t, (vm_address_t) p, n) < 0)
+			if (vm_deallocate(t, (vm_address_t) p, n) != KERN_SUCCESS)
 				abort();
 		}
 # endif
@@ -284,7 +286,7 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 		if (munmap(p, n * 2) < 0)
 			abort();
 # elif defined(__APPLE__)
-		if (vm_deallocate(mach_task_self(), (vm_address_t) p, n * 2) < 0)
+		if (vm_deallocate(mach_task_self(), (vm_address_t) p, n * 2) != KERN_SUCCESS)
 			abort();
 # endif
 	} else if ((flags & VM_RESERVE) != 0) {
