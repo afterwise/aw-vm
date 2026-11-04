@@ -57,6 +57,7 @@
 
 #if defined(__linux__)
 # include <stdio.h>
+# include <string.h>
 #endif
 
 #if defined(__APPLE__)
@@ -112,13 +113,18 @@ void vm_usage(size_t *total, size_t *resident) {
 	*resident = pmc.WorkingSetSize;
 #elif defined(__linux__)
 	unsigned long long sz = 0, rp = 0;
+	char buf[1024], *p;
 	FILE *fd;
 	if ((fd = fopen("/proc/self/stat", "rb")) != NULL) {
-		fscanf(
-			fd,
-			"%*u (%*256[^)]) %*c %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u"
-			"%*u %*u %*u %*u %*u %*u %*u %*u %*u %llu %llu",
-			&sz, &rp);
+		/* the process name may contain spaces and parentheses, so the
+		   fields after it are found after the last closing parenthesis */
+		if (fgets(buf, sizeof buf, fd) != NULL && (p = strrchr(buf, ')')) != NULL &&
+				sscanf(
+					p + 1,
+					" %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u"
+					" %*u %*u %*d %*d %*d %*d %*d %*d %*u %llu %llu",
+					&sz, &rp) != 2)
+			sz = rp = 0;
 		fclose(fd);
 	}
 	*total = sz;
