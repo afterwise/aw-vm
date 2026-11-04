@@ -292,13 +292,9 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 			abort();
 # endif
 	} else if ((flags & VM_RESERVE) != 0) {
-# if defined(MADV_FREE)
-		if (madvise(p, n, MADV_FREE) < 0)
+		/* drop the pages and leave the range reserved and inaccessible, as MEM_DECOMMIT does */
+		if (mmap(p, n, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE, -1, 0) == MAP_FAILED)
 			abort();
-# elif defined(MADV_DONTNEED)
-		if (madvise(p, n, MADV_DONTNEED) < 0)
-			abort();
-# endif
 	} else {
 		if (munmap(p, n) < 0)
 			abort();

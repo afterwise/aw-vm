@@ -40,14 +40,31 @@ extern size_t vm_bigpage;
 void vm_init(void);
 void vm_usage(size_t *total, size_t *resident);
 
+/*
+   Memory is in one of three states, the same on all platforms:
+
+   - reserved: the address range is taken, but there is no memory behind it
+     and any access faults.
+   - committed: readable and writable, and zero when first committed.
+   - released: the address range is free for anything to use again.
+
+   vm_alloc(NULL, n, VM_RESERVE, NULL)   reserves n bytes.
+   vm_alloc(p, n, 0, NULL)               commits a reserved range, or reserves
+                                         and commits n bytes when p is NULL.
+   vm_dealloc(p, n, VM_RESERVE, NULL)    decommits: the memory is freed at once
+                                         and the range is reserved again.
+   vm_dealloc(p, n, 0, NULL)             releases a whole allocation; p and n
+                                         must be those vm_alloc() reserved, as
+                                         Windows cannot release part of one.
+ */
+
 enum {
 	/*
 	   Allocate big pages to reduce TLB pressure.
 	 */
 	VM_BIGPAGES = 0x1,
 	/*
-	   Reserve memory but do not commit, can be used to decommit when passed to
-	   vm_dealloc().
+	   Reserve memory but do not commit, or decommit when passed to vm_dealloc().
 	 */
 	VM_RESERVE = 0x2,
 	/*
