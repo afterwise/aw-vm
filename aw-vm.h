@@ -70,20 +70,30 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id);
    Include aw-lma.h for this to compile.
  */
 
-#define vlma_create(lma,n) do { \
-		_lma_assert(((n) & (vm_page - 1)) == 0); \
-		lma_init(lma, vm_alloc(NULL, n, VM_RESERVE, NULL), n); \
-		(lma)->brks[LMA_HIGH] = (lma)->brks[LMA_LOW]; \
+#define vlma_create(l,n) do { \
+		struct lma *_vlma = (l); \
+		size_t _vlma_n = (n); \
+		void *_vlma_p; \
+		_lma_assert((_vlma_n & (vm_page - 1)) == 0); \
+		if ((_vlma_p = vm_alloc(NULL, _vlma_n, VM_RESERVE, NULL)) == NULL) \
+			abort(); \
+		lma_init(_vlma, _vlma_p, _vlma_n); \
+		_vlma->brks[LMA_HIGH] = _vlma->brks[LMA_LOW]; \
 	} while (0)
 #define vlma_destroy(lma) do { \
 		vm_dealloc((lma)->base, (lma)->end - (lma)->base, 0, NULL); \
 	} while (0)
-#define vlma_alloc(lma,p,n) do { \
-		while ((*(p) = lma_alloc_low(lma, n)) == NULL) { \
-			if ((lma)->brks[LMA_HIGH] >= (lma)->end) \
+/* commits pages as needed, never past the reservation, and aborts when it runs out */
+#define vlma_alloc(l,p,n) do { \
+		struct lma *_vlma = (l); \
+		size_t _vlma_n = (n), _vlma_grow; \
+		while ((*(p) = lma_alloc_low(_vlma, _vlma_n)) == NULL) { \
+			_vlma_grow = (_vlma_n + (vm_page - 1)) & ~(vm_page - 1); \
+			if (_vlma_grow > (size_t) (_vlma->end - _vlma->brks[LMA_HIGH])) \
+				_vlma_grow = (size_t) (_vlma->end - _vlma->brks[LMA_HIGH]); \
+			if (_vlma_grow == 0 || vm_alloc(_vlma->brks[LMA_HIGH], _vlma_grow, 0, NULL) == NULL) \
 				abort(); \
-			vm_alloc((lma)->brks[LMA_HIGH], ((n) + (vm_page - 1)) & ~(vm_page - 1), 0, NULL); \
-			(lma)->brks[LMA_HIGH] += ((n) + (vm_page - 1)) & ~(vm_page - 1); \
+			_vlma->brks[LMA_HIGH] += _vlma_grow; \
 		} \
 	} while (0)
 #define vlma_free(lma,p) do { \
