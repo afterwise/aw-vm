@@ -274,6 +274,9 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 				!UnmapViewOfFile((unsigned char *) p + n) ||
 				!CloseHandle((HANDLE) id))
 			abort();
+	} else if ((flags & VM_DISCARD) != 0) {
+		if (VirtualAlloc(p, n, MEM_RESET, PAGE_READWRITE) == NULL)
+			abort();
 	} else if ((flags & VM_RESERVE) != 0) {
 		if (!VirtualFree(p, n, MEM_DECOMMIT))
 			abort();
@@ -289,6 +292,14 @@ void vm_dealloc(void *p, size_t n, int flags, vm_mapping_id_t id) {
 			abort();
 # elif defined(__APPLE__)
 		if (vm_deallocate(mach_task_self(), (vm_address_t) p, n * 2) != KERN_SUCCESS)
+			abort();
+# endif
+	} else if ((flags & VM_DISCARD) != 0) {
+# if defined(MADV_FREE)
+		if (madvise(p, n, MADV_FREE) < 0)
+			abort();
+# else
+		if (madvise(p, n, MADV_DONTNEED) < 0)
 			abort();
 # endif
 	} else if ((flags & VM_RESERVE) != 0) {

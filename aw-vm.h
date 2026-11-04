@@ -53,6 +53,8 @@ void vm_usage(size_t *total, size_t *resident);
                                          and commits n bytes when p is NULL.
    vm_dealloc(p, n, VM_RESERVE, NULL)    decommits: the memory is freed at once
                                          and the range is reserved again.
+   vm_dealloc(p, n, VM_DISCARD, NULL)    discards the contents of committed
+                                         memory, which stays committed.
    vm_dealloc(p, n, 0, NULL)             releases a whole allocation; p and n
                                          must be those vm_alloc() reserved, as
                                          Windows cannot release part of one.
@@ -71,7 +73,12 @@ enum {
 	   Allocate a mirrored memory buffer, mapping double the address space wrapped
 	   around a single buffer. Must also be passed to vm_dealloc().
 	 */
-	VM_MIRROR = 0x4
+	VM_MIRROR = 0x4,
+	/*
+	   Passed to vm_dealloc(), lets the system take back committed memory when
+	   it needs it, while it stays committed and usable; its contents are lost.
+	 */
+	VM_DISCARD = 0x8
 };
 
 /*
