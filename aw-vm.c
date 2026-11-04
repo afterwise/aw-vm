@@ -80,16 +80,17 @@ void vm_init(void) {
 	HANDLE tok;
 	GetSystemInfo(&si);
 	vm_page = si.dwPageSize;
-	if (OpenProcessToken(INVALID_HANDLE_VALUE, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tok))
+	if (OpenProcessToken(INVALID_HANDLE_VALUE, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tok)) {
 		if (LookupPrivilegeValue(NULL, "SeLockMemoryPrivilege", &tp.Privileges[0].Luid)) {
 			tp.PrivilegeCount = 1;
 			tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 			if (AdjustTokenPrivileges(tok, FALSE, &tp, 0, NULL, 0) &&
 					GetLastError() == ERROR_SUCCESS)
 				vm_bigpage = GetLargePageMinimum();
-			if (!CloseHandle(tok))
-				abort();
 		}
+		if (!CloseHandle(tok))
+			abort();
+	}
 #elif defined(__linux__) || defined(__APPLE__)
 	vm_page = sysconf(_SC_PAGESIZE);
 	vm_bigpage = 2 * 1024 * 1024;
