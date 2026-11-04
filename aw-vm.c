@@ -169,10 +169,16 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 		if ((p = VirtualAlloc(NULL, n, MEM_RESERVE, PAGE_NOACCESS)) != NULL)
 			return p;
 	} else {
-		if ((p = VirtualAlloc(
-				p, n, MEM_COMMIT | (p == NULL ? MEM_RESERVE : 0) | (big ? MEM_LARGE_PAGES : 0),
+		void *q;
+		/* fall back to normal pages when big pages are not available */
+		if (big && (q = VirtualAlloc(
+				p, n, MEM_COMMIT | (p == NULL ? MEM_RESERVE : 0) | MEM_LARGE_PAGES,
 				PAGE_READWRITE)) != NULL)
-			return p;
+			return q;
+		if ((q = VirtualAlloc(
+				p, n, MEM_COMMIT | (p == NULL ? MEM_RESERVE : 0),
+				PAGE_READWRITE)) != NULL)
+			return q;
 	}
 #elif defined(__linux__) || defined(__APPLE__)
 	if ((flags & VM_MIRROR) != 0) {
@@ -209,18 +215,24 @@ void *vm_alloc(void *p, size_t n, int flags, vm_mapping_id_t *id) {
 		if ((p = mmap(NULL, n, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0)) != MAP_FAILED)
 			return p;
 	} else {
+		void *q;
+		/* fall back to normal pages when big pages are not available */
 # if defined(__linux__)
-		if ((p = mmap(
+		if (big && (q = mmap(
 				p, n, PROT_READ | PROT_WRITE,
-				MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0) | (big ? MAP_HUGETLB : 0),
+				MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0) | MAP_HUGETLB,
 				-1, 0)) != MAP_FAILED)
-			return p;
+			return q;
 # elif defined(__APPLE__)
-		if ((p = mmap(
+		if (big && (q = mmap(
 				p, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0),
-				(big ? VM_FLAGS_SUPERPAGE_SIZE_2MB : -1), 0)) != MAP_FAILED)
-			return p;
+				VM_FLAGS_SUPERPAGE_SIZE_2MB, 0)) != MAP_FAILED)
+			return q;
 # endif
+		if ((q = mmap(
+				p, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | (p != NULL ? MAP_FIXED : 0),
+				-1, 0)) != MAP_FAILED)
+			return q;
 	}
 #elif defined(__CELLOS_LV2__)
 	if ((flags & (VM_RESERVE | VM_MIRROR)) == 0) {
