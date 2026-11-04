@@ -45,6 +45,9 @@
 #if defined(_WIN32)
 # include <windows.h>
 # include <psapi.h>
+# if defined(_MSC_VER)
+#  pragma comment(lib, "advapi32.lib")
+# endif
 #endif
 
 #if defined(__linux__) || defined(__APPLE__)
